@@ -15,7 +15,10 @@ def generate_launch_description():
                     package='segwayrmp',
                     plugin='robot::Chassis',
                     name='segway_chassis',
-                    remappings=[("/cmd_vel", "/out_cmd_vel")]
+                    remappings=[("/cmd_vel", "/out_cmd_vel")],
+                    parameters=[{
+                        'comu_interface': 'can'
+                    }]
                 ),
                 ComposableNode(
                     package='segwayrmp',

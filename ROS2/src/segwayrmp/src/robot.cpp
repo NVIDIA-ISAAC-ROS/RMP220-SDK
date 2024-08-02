@@ -95,12 +95,24 @@ void Chassis::pub_event_callback(int event_no)
 
 Chassis::Chassis(const rclcpp::NodeOptions & options) : node(std::make_shared<rclcpp::Node>("SmartCar", options))
 {
-    // node->declare_parameter<std::string>("serial_full_name", "/dev/ttyUSB0");
-    // std::string serial_full_name;
-    // node->get_parameter("serial_full_name", serial_full_name);
-    // // init_control()parameter: Fill in the full path name of the actual serial port being used
-    // set_smart_car_serial((char*)serial_full_name.c_str());//If a serial port is used, set the serial port name.
-    set_comu_interface(comu_can);//Before calling init_control_ctrl, need to call this function set whether the communication port is serial or CAN.
+    node->declare_parameter<std::string>("comu_interface", "serial");
+    node->declare_parameter<std::string>("serial_full_name", "/dev/ttyUSB0");
+    std::string serial_full_name;
+    std::string comu_interface_param;
+    node->get_parameter("serial_full_name", serial_full_name);
+    node->get_parameter("comu_interface", comu_interface_param);
+
+    comu_choice_e comu_interface;
+    if (comu_interface_param == "serial") {
+        comu_interface = comu_serial;
+        set_smart_car_serial((char*)serial_full_name.c_str());
+    } else if (comu_interface_param == "can") {
+        comu_interface = comu_can;
+    } else {
+        RCLCPP_ERROR(node->get_logger(), "Invalid comu interface \"%s\". Exiting.");
+    }
+
+    set_comu_interface(comu_interface);//Before calling init_control_ctrl, need to call this function set whether the communication port is serial or CAN.
     if (init_control_ctrl() == -1) { 
         printf("init_control failed!\n");
         exit_control_ctrl();
