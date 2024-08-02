@@ -65,12 +65,6 @@ ament_auto_add_library(segway_chassis_component SHARED src/robot.cpp)
 target_compile_definitions(segway_chassis_component
   PRIVATE "COMPOSITION_BUILDING_DLL"
 )
-set(node_plugins "${node_plugins}robot::Chassis;$<TARGET_FILE:segway_chassis_component>\n")
-set_target_properties(segway_chassis_component PROPERTIES
-  BUILD_WITH_INSTALL_RPATH TRUE
-  BUILD_RPATH_USE_ORIGIN TRUE
-  INSTALL_RPATH_USE_LINK_PATH TRUE
-)
 ament_target_dependencies(segway_chassis_component
   rclcpp
   rclcpp_components
@@ -89,6 +83,9 @@ rclcpp_components_register_node(segway_chassis_component PLUGIN "robot::Chassis"
 
 ament_auto_add_library(segway_controller_component SHARED
   src/controller.cpp
+)
+target_compile_definitions(segway_controller_component
+  PRIVATE "COMPOSITION_BUILDING_DLL"
 )
 ament_target_dependencies(segway_controller_component
   rclcpp

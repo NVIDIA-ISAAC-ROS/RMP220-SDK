@@ -139,16 +139,16 @@ Chassis::Chassis(const rclcpp::NodeOptions & options) : node(std::make_shared<rc
     node->declare_parameter<std::string>("central_version", "1.01");
     node->declare_parameter<std::string>("motor_version", "1.01");
 
-    bms_fb_pub = node->create_publisher<segway_msgs::msg::BmsFb>("/bms_fb", 1);
-    chassis_ctrl_src_fb_pub = node->create_publisher<segway_msgs::msg::ChassisCtrlSrcFb>("/chassis_ctrl_src_fb", 1);
-    chassis_mileage_meter_fb_pub = node->create_publisher<segway_msgs::msg::ChassisMileageMeterFb>("/chassis_mileage_meter_fb", 1);
-    chassis_mode_fb_pub = node->create_publisher<segway_msgs::msg::ChassisModeFb>("/chassis_mode_fb", 1);
-    error_code_fb_pub = node->create_publisher<segway_msgs::msg::ErrorCodeFb>("/error_code_fb", 1);
-    motor_work_mode_fb_pub = node->create_publisher<segway_msgs::msg::MotorWorkModeFb>("/motor_work_mode_fb", 1);
-    speed_fb_pub = node->create_publisher<segway_msgs::msg::SpeedFb>("/speed_fb", 1);
-    ticks_fb_pub = node->create_publisher<segway_msgs::msg::TicksFb>("/ticks_fb", 1);
-    odom_pub = node->create_publisher<nav_msgs::msg::Odometry>("/odom", 1);
-    imu_pub = node->create_publisher<sensor_msgs::msg::Imu>("/imu", 1);
+    bms_fb_pub = node->create_publisher<segway_msgs::msg::BmsFb>("bms_fb", 1);
+    chassis_ctrl_src_fb_pub = node->create_publisher<segway_msgs::msg::ChassisCtrlSrcFb>("chassis_ctrl_src_fb", 1);
+    chassis_mileage_meter_fb_pub = node->create_publisher<segway_msgs::msg::ChassisMileageMeterFb>("chassis_mileage_meter_fb", 1);
+    chassis_mode_fb_pub = node->create_publisher<segway_msgs::msg::ChassisModeFb>("chassis_mode_fb", 1);
+    error_code_fb_pub = node->create_publisher<segway_msgs::msg::ErrorCodeFb>("error_code_fb", 1);
+    motor_work_mode_fb_pub = node->create_publisher<segway_msgs::msg::MotorWorkModeFb>("motor_work_mode_fb", 1);
+    speed_fb_pub = node->create_publisher<segway_msgs::msg::SpeedFb>("speed_fb", 1);
+    ticks_fb_pub = node->create_publisher<segway_msgs::msg::TicksFb>("ticks_fb", 1);
+    odom_pub = node->create_publisher<nav_msgs::msg::Odometry>("odom", 1);
+    imu_pub = node->create_publisher<sensor_msgs::msg::Imu>("imu", 1);
 
     event_client = node->create_client<segway_msgs::srv::ChassisSendEvent>("event_srv");
 

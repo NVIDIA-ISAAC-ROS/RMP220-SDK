@@ -28,8 +28,8 @@ def generate_launch_description():
                 ComposableNode(
                     package='segwayrmp',
                     plugin='robot::Chassis',
+                    namespace='chassis',
                     name='segway_chassis',
-                    remappings=[("/cmd_vel", "/out_cmd_vel")],
                     parameters=[{
                         'comu_interface': LaunchConfiguration('comu_interface'),
                     }]
@@ -37,8 +37,12 @@ def generate_launch_description():
                 ComposableNode(
                     package='segwayrmp',
                     plugin='segway::SegwayController',
+                    namespace='chassis',
                     name='segway_controller',
-                    remappings=[('/in_cmd_vel', '/twist_mux/cmd_vel')]
+                    remappings=[
+                        ('in_cmd_vel', '/twist_mux/cmd_vel'),
+                        ('out_cmd_vel', 'cmd_vel')
+                    ]
                 ),
             ],
             output='screen',
