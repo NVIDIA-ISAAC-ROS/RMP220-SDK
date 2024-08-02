@@ -74,6 +74,13 @@ void EventPubData(int event_no)
 
 namespace robot
 {
+
+rclcpp::node_interfaces::NodeBaseInterface::SharedPtr
+Chassis::get_node_base_interface() const
+{
+  return this->node->get_node_base_interface();
+}
+
 void Chassis::pub_event_callback(int event_no)
 {
     using eventServiceResponseFutrue = rclcpp::Client<segway_msgs::srv::ChassisSendEvent>::SharedFuture;
@@ -86,10 +93,23 @@ void Chassis::pub_event_callback(int event_no)
     auto event_future_result = event_client->async_send_request(event_request, event_response_receive_callback);
 }
 
-Chassis::Chassis(rclcpp::Node::SharedPtr nh) : node(nh)
+Chassis::Chassis(const rclcpp::NodeOptions & options) : node(std::make_shared<rclcpp::Node>("SmartCar", options))
 {
+    // node->declare_parameter<std::string>("serial_full_name", "/dev/ttyUSB0");
+    // std::string serial_full_name;
+    // node->get_parameter("serial_full_name", serial_full_name);
+    // // init_control()parameter: Fill in the full path name of the actual serial port being used
+    // set_smart_car_serial((char*)serial_full_name.c_str());//If a serial port is used, set the serial port name.
+    set_comu_interface(comu_can);//Before calling init_control_ctrl, need to call this function set whether the communication port is serial or CAN.
+    if (init_control_ctrl() == -1) { 
+        printf("init_control failed!\n");
+        exit_control_ctrl();
+    } else {
+        printf("init_control success!\n");
+    }
+
     using namespace std::placeholders;
-    car_node = nh;
+    car_node = this->node;
 
     timestamp_data.on_new_data = PubData;
     aprctrl_datastamped_jni_register(&timestamp_data);
@@ -517,3 +537,6 @@ void Chassis::pub_odom_callback(void)
 }
 
 }
+
+#include <rclcpp_components/register_node_macro.hpp>
+RCLCPP_COMPONENTS_REGISTER_NODE(robot::Chassis)

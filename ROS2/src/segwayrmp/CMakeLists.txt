@@ -30,6 +30,7 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(rclcpp_components REQUIRED)
+find_package(ament_cmake_auto REQUIRED)
 
 
 message("-- Segway Robtics Notice: This external lib and include path can be changed by users.")
@@ -55,39 +56,68 @@ else()
 endif()
 message( "-- Segway Robtics Notice: EXTERNAL_LIB name is " ${EXTERNAL_LIB} )
 
+include_directories(
+  include
+  ${rclcpp_components_INCLUDE_DIRS}
+)
 
-add_executable(SmartCar
-  src/SmartCar.cpp 
-  src/robot.cpp 
+ament_auto_add_library(segway_chassis_component SHARED src/robot.cpp)
+target_compile_definitions(segway_chassis_component
+  PRIVATE "COMPOSITION_BUILDING_DLL"
 )
-target_include_directories(SmartCar PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
+set(node_plugins "${node_plugins}robot::Chassis;$<TARGET_FILE:segway_chassis_component>\n")
+set_target_properties(segway_chassis_component PROPERTIES
+  BUILD_WITH_INSTALL_RPATH TRUE
+  BUILD_RPATH_USE_ORIGIN TRUE
+  INSTALL_RPATH_USE_LINK_PATH TRUE
 )
-ament_target_dependencies(SmartCar
-  "rclcpp" "std_msgs" "nav_msgs" "sensor_msgs" "geometry_msgs" "segway_msgs" "tf2" "tf2_ros"
-) 
-target_link_libraries(SmartCar
+ament_target_dependencies(segway_chassis_component
+  rclcpp
+  rclcpp_components
+  std_msgs
+  nav_msgs
+  geometry_msgs
+  segway_msgs
+  sensor_msgs
+  tf2
+  tf2_ros
+)
+target_link_libraries(segway_chassis_component
   ${EXTERNAL_LIB}
 )
+rclcpp_components_register_node(segway_chassis_component PLUGIN "robot::Chassis" EXECUTABLE SmartCar)
 
-
-add_executable(drive_segway_sample
-  tools/drive_segway_sample.cpp
+ament_auto_add_library(segway_controller_component SHARED
+  src/controller.cpp
 )
-target_include_directories(drive_segway_sample PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
+ament_target_dependencies(segway_controller_component
+  rclcpp
+  rclcpp_components
+  geometry_msgs
+  segway_msgs
 )
-ament_target_dependencies(drive_segway_sample
-  "rclcpp" "std_msgs" "nav_msgs" "sensor_msgs" "geometry_msgs" "segway_msgs" "tf2" "tf2_ros"
-) 
+target_link_libraries(segway_controller_component
+  ${EXTERNAL_LIB}
+)
+rclcpp_components_register_node(segway_controller_component PLUGIN "segway::SegwayController" EXECUTABLE segway_controller)
 
-install(TARGETS
-  SmartCar
-  drive_segway_sample
-  DESTINATION
-  lib/${PROJECT_NAME})
+
+# add_executable(drive_segway_sample
+#   tools/drive_segway_sample.cpp
+# )
+# target_include_directories(drive_segway_sample PUBLIC
+#   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+#   $<INSTALL_INTERFACE:include>
+# )
+# ament_target_dependencies(drive_segway_sample
+#   "rclcpp" "std_msgs" "nav_msgs" "sensor_msgs" "geometry_msgs" "segway_msgs" "tf2" "tf2_ros"
+# ) 
+
+install(
+  FILES
+  ${EXTERNAL_LIB}
+  DESTINATION lib
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -100,4 +130,6 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-ament_package()
+ament_auto_find_build_dependencies()
+
+ament_auto_package(INSTALL_TO_SHARE launch)

@@ -54,10 +54,14 @@ namespace robot
         public:
             using iapCmd = segway_msgs::action::RosSetIapCmd;
             using goalHandaleIapCmd = rclcpp_action::ServerGoalHandle<iapCmd>;
-            Chassis(rclcpp::Node::SharedPtr nh);
+            Chassis(const rclcpp::NodeOptions & options);
             static void pub_event_callback(int event_no);
-        private:
+
+            rclcpp::node_interfaces::NodeBaseInterface::SharedPtr
+            get_node_base_interface() const;
+
             std::shared_ptr<rclcpp::Node> node;
+        private:
 
             std::string bins_directory;
             std::string central_version;
