@@ -95,12 +95,10 @@ void Chassis::pub_event_callback(int event_no)
 
 Chassis::Chassis(const rclcpp::NodeOptions & options) : node(std::make_shared<rclcpp::Node>("SmartCar", options))
 {
-    node->declare_parameter<std::string>("comu_interface", "serial");
-    node->declare_parameter<std::string>("serial_full_name", "/dev/ttyUSB0");
-    std::string serial_full_name;
-    std::string comu_interface_param;
-    node->get_parameter("serial_full_name", serial_full_name);
-    node->get_parameter("comu_interface", comu_interface_param);
+    robot_frame_name_ = node->declare_parameter<bool>("robot_frame_name", "base_link");
+    odom_frame_name_ = node->declare_parameter<std::string>("odom_frame_name", "odom");
+    auto comu_interface_param = node->declare_parameter<std::string>("comu_interface", "serial");
+    auto serial_full_name = node->declare_parameter<std::string>("serial_full_name", "/dev/ttyUSB0");
 
     comu_choice_e comu_interface;
     if (comu_interface_param == "serial") {
@@ -112,13 +110,22 @@ Chassis::Chassis(const rclcpp::NodeOptions & options) : node(std::make_shared<rc
         RCLCPP_ERROR(node->get_logger(), "Invalid comu interface \"%s\". Exiting.");
     }
 
+    // Establish communication interface
     set_comu_interface(comu_interface);//Before calling init_control_ctrl, need to call this function set whether the communication port is serial or CAN.
     if (init_control_ctrl() == -1) { 
-        printf("init_control failed!\n");
+        RCLCPP_ERROR(this->node->get_logger(), "init_control failed!");
         exit_control_ctrl();
     } else {
-        printf("init_control success!\n");
+        RCLCPP_INFO(this->node->get_logger(), "init_control success!");
     }
+
+    // Callback on node shutdown to disable control and exit
+    using rclcpp::contexts::get_global_default_context;
+    get_global_default_context()->add_pre_shutdown_callback(
+        [this]() {
+        set_enable_ctrl(0);
+        exit_control_ctrl();
+    });
 
     using namespace std::placeholders;
     car_node = this->node;
@@ -265,8 +272,8 @@ void Chassis::ros_set_chassis_enable_cmd_callback(const std::shared_ptr<segway_m
     else {
         ret = set_enable_ctrl(1);
     }
-    RCLCPP_INFO(rclcpp::get_logger("SmartCar"), "ros_set_chassis_enable_cmd cmd[%d]", request->ros_set_chassis_enable_cmd);
-    RCLCPP_INFO(rclcpp::get_logger("SmartCar"), "chassis_set_chassis_enable_result[%d]", ret);
+    RCLCPP_DEBUG(this->node->get_logger(), "ros_set_chassis_enable_cmd cmd[%d]", request->ros_set_chassis_enable_cmd);
+    RCLCPP_DEBUG(this->node->get_logger(), "chassis_set_chassis_enable_result[%d]", ret);
     response->chassis_set_chassis_enable_result = ret;
 }
 void Chassis::ros_set_chassis_calib_imu_cmd_callback(const std::shared_ptr<segway_msgs::srv::RosSetChassisCalibImuCmd::Request> request,
@@ -519,8 +526,8 @@ void Chassis::pub_odom_callback(void)
 
         odom_quat.setRPY(0, 0, OdomEulerZ.euler_z / RAD_DEGREE_CONVER);
         odom_trans.header.stamp = node->now();
-        odom_trans.header.frame_id = "odom";
-        odom_trans.child_frame_id = "base_link";
+        odom_trans.header.frame_id = robot_frame_name_;
+        odom_trans.child_frame_id = odom_frame_name_;
         odom_trans.transform.translation.x = OdomPoseXy.pos_x;
         odom_trans.transform.translation.y = OdomPoseXy.pos_y;
         odom_trans.transform.translation.z = 0.0;
@@ -531,7 +538,7 @@ void Chassis::pub_odom_callback(void)
         odom_broadcaster->sendTransform(odom_trans);
 
         odom_fb.header.stamp = node->now();
-        odom_fb.header.frame_id = "odom";
+        odom_fb.header.frame_id = odom_frame_name_;
         odom_fb.pose.pose.position.x = OdomPoseXy.pos_x;
         odom_fb.pose.pose.position.y = OdomPoseXy.pos_y;
         odom_fb.pose.pose.position.z = 0.0;
@@ -540,7 +547,7 @@ void Chassis::pub_odom_callback(void)
         odom_fb.pose.pose.orientation.z = odom_quat.z();
         odom_fb.pose.pose.orientation.w = odom_quat.w();
 
-        odom_fb.child_frame_id = "base_link";
+        odom_fb.child_frame_id = robot_frame_name_;
         odom_fb.twist.twist.linear.x = (double)SpeedData.car_speed / LINE_SPEED_TRANS_GAIN_MPS;
         odom_fb.twist.twist.linear.y = 0;
         odom_fb.twist.twist.angular.z = (double)SpeedData.turn_speed / ANGULAR_SPEED_TRANS_GAIN_RADPS;;

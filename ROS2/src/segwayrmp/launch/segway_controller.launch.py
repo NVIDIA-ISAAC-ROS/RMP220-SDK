@@ -1,15 +1,29 @@
-import launch
+from launch.launch_description import LaunchDescription
 from launch_ros.actions import ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
+
 
 
 def generate_launch_description():
     """Generate launch description with multiple components."""
-    container = ComposableNodeContainer(
+    ld = LaunchDescription()
+    ld.add_action(DeclareLaunchArgument(
+        'container_prefix',
+        default_value='',
+    ))
+    ld.add_action(DeclareLaunchArgument(
+        'comu_interface',
+        default_value='can',
+        choices=['can', 'serial'],
+    ))
+    ld.add_action(ComposableNodeContainer(
             name='segway_container',
             namespace='',
+            prefix=LaunchConfiguration('container_prefix'),
             package='rclcpp_components',
-            executable='component_container',
+            executable='component_container_mt',
             composable_node_descriptions=[
                 ComposableNode(
                     package='segwayrmp',
@@ -17,7 +31,7 @@ def generate_launch_description():
                     name='segway_chassis',
                     remappings=[("/cmd_vel", "/out_cmd_vel")],
                     parameters=[{
-                        'comu_interface': 'can'
+                        'comu_interface': LaunchConfiguration('comu_interface'),
                     }]
                 ),
                 ComposableNode(
@@ -28,6 +42,6 @@ def generate_launch_description():
                 ),
             ],
             output='screen',
-    )
+    ))
 
-    return launch.LaunchDescription([container])
+    return ld

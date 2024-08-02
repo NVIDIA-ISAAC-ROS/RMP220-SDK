@@ -63,6 +63,9 @@ namespace robot
             std::shared_ptr<rclcpp::Node> node;
         private:
 
+            std::string robot_frame_name_;
+            std::string odom_frame_name_;
+
             std::string bins_directory;
             std::string central_version;
             std::string motor_version;
