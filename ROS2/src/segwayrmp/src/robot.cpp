@@ -95,7 +95,7 @@ void Chassis::pub_event_callback(int event_no)
 
 Chassis::Chassis(const rclcpp::NodeOptions & options) : node(std::make_shared<rclcpp::Node>("SmartCar", options))
 {
-    robot_frame_name_ = node->declare_parameter<bool>("robot_frame_name", "base_link");
+    robot_frame_name_ = node->declare_parameter<std::string>("robot_frame_name", "base_link");
     odom_frame_name_ = node->declare_parameter<std::string>("odom_frame_name", "odom");
     auto comu_interface_param = node->declare_parameter<std::string>("comu_interface", "serial");
     auto serial_full_name = node->declare_parameter<std::string>("serial_full_name", "/dev/ttyUSB0");
