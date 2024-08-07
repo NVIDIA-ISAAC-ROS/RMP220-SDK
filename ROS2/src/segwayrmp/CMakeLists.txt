@@ -23,6 +23,7 @@ find_package(rclcpp REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(segway_msgs REQUIRED)
@@ -73,6 +74,7 @@ ament_target_dependencies(segway_chassis_component
   geometry_msgs
   segway_msgs
   sensor_msgs
+  diagnostic_msgs
   tf2
   tf2_ros
 )
@@ -80,24 +82,6 @@ target_link_libraries(segway_chassis_component
   ${EXTERNAL_LIB}
 )
 rclcpp_components_register_node(segway_chassis_component PLUGIN "robot::Chassis" EXECUTABLE SmartCar)
-
-ament_auto_add_library(segway_controller_component SHARED
-  src/controller.cpp
-)
-target_compile_definitions(segway_controller_component
-  PRIVATE "COMPOSITION_BUILDING_DLL"
-)
-ament_target_dependencies(segway_controller_component
-  rclcpp
-  rclcpp_components
-  geometry_msgs
-  segway_msgs
-)
-target_link_libraries(segway_controller_component
-  ${EXTERNAL_LIB}
-)
-rclcpp_components_register_node(segway_controller_component PLUGIN "segway::SegwayController" EXECUTABLE segway_controller)
-
 
 # add_executable(drive_segway_sample
 #   tools/drive_segway_sample.cpp
@@ -129,4 +113,4 @@ endif()
 
 ament_auto_find_build_dependencies()
 
-ament_auto_package(INSTALL_TO_SHARE launch)
+ament_auto_package()

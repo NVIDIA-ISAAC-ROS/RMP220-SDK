@@ -11,9 +11,13 @@
 
 #include <rosidl_typesupport_cpp/message_type_support.hpp>
 #include "rclcpp/rclcpp.hpp"
+#include <diagnostic_msgs/msg/diagnostic_array.hpp>
+#include <diagnostic_msgs/msg/diagnostic_status.hpp>
+#include <diagnostic_msgs/msg/key_value.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <nav_msgs/msg/odometry.hpp>
+#include <sensor_msgs/msg/battery_state.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include "tf2_ros/transform_broadcaster.h"
 #include <tf2_ros/static_transform_broadcaster.h>
@@ -83,7 +87,8 @@ namespace robot
             segway_msgs::msg::TicksFb ticks_fb;
             geometry_msgs::msg::TransformStamped odom_trans;
             nav_msgs::msg::Odometry odom_fb;
-            sensor_msgs::msg::Imu imu_fb;     
+            sensor_msgs::msg::Imu imu_fb;
+            sensor_msgs::msg::BatteryState battery_msg_;
 
             rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr velocity_sub;
 
@@ -97,6 +102,8 @@ namespace robot
             rclcpp::Publisher<segway_msgs::msg::TicksFb>::SharedPtr ticks_fb_pub;
             rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub;
             rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub;
+            rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr battery_pub;
+            rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_pub;
 
 
             rclcpp::Service<segway_msgs::srv::RosGetChargeMosCtrlStatusCmd>::SharedPtr ros_get_charge_mos_ctrl_status_cmd_server;

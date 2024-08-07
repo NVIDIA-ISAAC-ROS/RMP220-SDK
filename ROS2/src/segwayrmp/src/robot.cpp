@@ -1,5 +1,7 @@
 #include "segwayrmp/robot.h"
 #include <cwchar>
+#include <sstream>
+#include <iomanip>
 #define VEL_DT              0.05  //50ms
 #define RAD_DEGREE_CONVER   57.2958
 #define HOST_SPEED_UINIT            3600 //
@@ -39,6 +41,57 @@ uint8_t OdomEulerXy_update;
 uint8_t OdomEulerZ_update;
 uint8_t OdomVelLineXy_update;
 
+static std::map<uint32_t, std::string> hostErrors = {
+    {0x00000000, "No error"},
+    {0x00000001, "Loss of control board"},
+    {0x00000002, "Unplug the serial port"}
+};
+
+static std::map<uint32_t, std::string> centralErrors = {
+    {0x00000000, "No error"},
+    {0x00000001, "Control car command communication interrupted"},
+    {0x00000002, "Motor board communication interrupted"},
+    {0x00000004, "IMU initialization failed"},
+    {0x00000008, "IMU failed to read data"},
+    {0x00000010, "Lost control"},
+    {0x00000020, "Locked rotor"},
+    {0x00000040, "Failed to calibrate IMU"},
+    {0x00000080, "Read Flash failed"},
+    {0x00000100, "IMU data update failed"},
+    {0x00000200, "Bms failed to initialize into test mode"},
+    {0x00000400, "Rollover"},
+    {0x00000800, "Any motor board restart is detected"},
+    {0x00001000, "Left magnetic encoder fault"},
+    {0x00002000, "Right magnetic encoder fault"},
+    {0x00004000, "Battery communication interrupted"}
+};
+
+static std::map<uint32_t, std::string> motorErrors = {
+    {0x00000000, "No error"},
+    {0x00000001, "Phase current fault"},
+    {0x00000002, "Phase voltage fault"},
+    {0x00000004, "Lack of phase"},
+    {0x00000008, "Under voltage"},
+    {0x00000010, "Over voltage"},
+    {0x00000020, "Over current"},
+    {0x00000040, "Over temperature"},
+    {0x00000080, "Locked rotor"},
+    {0x00000100, "Electrical angle fault"},
+    {0x00000200, "Excessive power fault"},
+    {0x00000400, "Over speed fault"},
+    {0x00000800, "Rotational speed sensor fault"},
+    {0x00001000, "Angle sensor fault"},
+    {0x00002000, "Current loop fault"},
+    {0x00004000, "Speed loop fault"},
+    {0x00008000, "Angle loop fault"}
+};
+
+static std::map<uint32_t, std::string> batteryErrors = {
+    {0x00000000, "No error"},
+    {0x00000200, "Discharge over temperature protection"},
+    {0x00000400, "Discharge low temperature protection"}
+};
+
 static SegwayData segway_data_tbl[] = {
     {Chassis_Data_Speed,  sizeof(SpeedData), &Speed_TimeStamp, &Speed_update, &SpeedData},
     {Chassis_Data_Ticks,  sizeof(TickData), &Tick_TimeStamp, &Tick_update, &TickData},
@@ -70,6 +123,17 @@ void PubData(StampedBasicFrame_ *frame)
 void EventPubData(int event_no)
 {
     robot::Chassis::pub_event_callback(event_no);
+}
+
+std::string convert_to_hex_str(uint32_t value) {
+    std::stringstream ss;
+    ss << "0x" << std::setw(8) << std::setfill('0') << std::hex << value;
+    return ss.str();
+}
+
+std::string get_error_info(std::map<uint32_t, std::string> error_map, uint32_t key) {
+    auto it = error_map.find(key);
+    return it != error_map.end() ? it->second : "UNDEFINED";
 }
 
 namespace robot
@@ -107,14 +171,14 @@ Chassis::Chassis(const rclcpp::NodeOptions & options) : node(std::make_shared<rc
     } else if (comu_interface_param == "can") {
         comu_interface = comu_can;
     } else {
-        RCLCPP_ERROR(node->get_logger(), "Invalid comu interface \"%s\". Exiting.");
+        throw std::runtime_error("Invalid comu interface \"" + comu_interface_param + "\". Exiting.");
     }
 
     // Establish communication interface
     set_comu_interface(comu_interface);//Before calling init_control_ctrl, need to call this function set whether the communication port is serial or CAN.
     if (init_control_ctrl() == -1) { 
-        RCLCPP_ERROR(this->node->get_logger(), "init_control failed!");
         exit_control_ctrl();
+        throw std::runtime_error("init_control failed!");
     } else {
         RCLCPP_INFO(this->node->get_logger(), "init_control success!");
     }
@@ -149,6 +213,8 @@ Chassis::Chassis(const rclcpp::NodeOptions & options) : node(std::make_shared<rc
     ticks_fb_pub = node->create_publisher<segway_msgs::msg::TicksFb>("ticks_fb", 1);
     odom_pub = node->create_publisher<nav_msgs::msg::Odometry>("odom", 1);
     imu_pub = node->create_publisher<sensor_msgs::msg::Imu>("imu", 1);
+    battery_pub = node->create_publisher<sensor_msgs::msg::BatteryState>("battery_state", 1);
+    diagnostics_pub = node->create_publisher<diagnostic_msgs::msg::DiagnosticArray>("diagnostics", 1);
 
     event_client = node->create_client<segway_msgs::srv::ChassisSendEvent>("event_srv");
 
@@ -464,6 +530,54 @@ void Chassis::timer_1hz_callback(void)
 
     motor_work_mode_fb.motor_work_mode = get_chassis_work_model();
     motor_work_mode_fb_pub->publish(motor_work_mode_fb);
+
+    battery_msg_.header.stamp = node->now();
+    battery_msg_.header.frame_id = robot_frame_name_;
+    battery_msg_.voltage = get_bat_mvol() / 1000.0;
+    battery_msg_.current = get_bat_mcurrent() / 1000.0;
+    battery_msg_.percentage = get_bat_soc() / 100.0;
+    if (get_charge_mode_status()) {
+        battery_msg_.power_supply_status = sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_CHARGING;
+    } else {
+        battery_msg_.power_supply_status = sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_DISCHARGING;
+    }
+    battery_pub->publish(battery_msg_);
+
+    auto diagnostics_msg = diagnostic_msgs::msg::DiagnosticArray();
+    diagnostics_msg.header.stamp = node->now();
+    diagnostics_msg.header.frame_id = robot_frame_name_;
+    auto diagnostic_status = diagnostic_msgs::msg::DiagnosticStatus();
+    // add errors as key value pairs
+    auto host_error_kv = diagnostic_msgs::msg::KeyValue();
+    host_error_kv.key = "host_error";
+    host_error_kv.value = convert_to_hex_str(error_code_fb.host_error) + ": " + get_error_info(hostErrors, error_code_fb.host_error);
+    diagnostic_status.values.push_back(host_error_kv);
+    auto central_error_kv = diagnostic_msgs::msg::KeyValue();
+    central_error_kv.key = "central_error";
+    central_error_kv.value = convert_to_hex_str(error_code_fb.central_error) + ": " + get_error_info(centralErrors, error_code_fb.central_error);
+    diagnostic_status.values.push_back(central_error_kv);
+    auto left_motor_error_kv = diagnostic_msgs::msg::KeyValue();
+    left_motor_error_kv.key = "left_motor_error";
+    left_motor_error_kv.value = convert_to_hex_str(error_code_fb.left_motor_error) + ": " + get_error_info(motorErrors, error_code_fb.left_motor_error);
+    diagnostic_status.values.push_back(left_motor_error_kv);
+    auto right_motor_error_kv = diagnostic_msgs::msg::KeyValue();
+    right_motor_error_kv.key = "right_motor_error";
+    right_motor_error_kv.value = convert_to_hex_str(error_code_fb.right_motor_error) + ": " + get_error_info(motorErrors, error_code_fb.right_motor_error);
+    diagnostic_status.values.push_back(right_motor_error_kv);
+    auto bms_error_kv = diagnostic_msgs::msg::KeyValue();
+    bms_error_kv.key = "bms_error";
+    bms_error_kv.value = convert_to_hex_str(error_code_fb.bms_error) + ": " + get_error_info(batteryErrors, error_code_fb.bms_error);
+    // finish constructing status
+    diagnostic_status.values.push_back(bms_error_kv);
+    if (error_code_fb.host_error || error_code_fb.central_error || error_code_fb.left_motor_error
+        || error_code_fb.right_motor_error || error_code_fb.bms_error) {
+        diagnostic_status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+    } else {
+        diagnostic_status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+    }
+    diagnostic_status.name = "segway_rmp";
+    diagnostics_msg.status.push_back(diagnostic_status);
+    diagnostics_pub->publish(diagnostics_msg);
 }
 
 void Chassis::timer_1000hz_callback(void)
@@ -526,8 +640,8 @@ void Chassis::pub_odom_callback(void)
 
         odom_quat.setRPY(0, 0, OdomEulerZ.euler_z / RAD_DEGREE_CONVER);
         odom_trans.header.stamp = node->now();
-        odom_trans.header.frame_id = robot_frame_name_;
-        odom_trans.child_frame_id = odom_frame_name_;
+        odom_trans.header.frame_id = odom_frame_name_;
+        odom_trans.child_frame_id = robot_frame_name_;
         odom_trans.transform.translation.x = OdomPoseXy.pos_x;
         odom_trans.transform.translation.y = OdomPoseXy.pos_y;
         odom_trans.transform.translation.z = 0.0;

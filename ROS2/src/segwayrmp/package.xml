@@ -13,8 +13,9 @@
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>diagnostic_msgs</depend>
   <depend>geometry_msgs</depend>
-  <!-- <depend>sensor_msgs</depned> -->
+  <depend>sensor_msgs</depend>
   <depend>segway_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
