@@ -18,20 +18,8 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # find dependencies
-find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
-find_package(rclpy REQUIRED)
-find_package(std_msgs REQUIRED)
-find_package(nav_msgs REQUIRED)
-find_package(diagnostic_msgs REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(geometry_msgs REQUIRED)
-find_package(segway_msgs REQUIRED)
-find_package(tf2 REQUIRED)
-find_package(tf2_ros REQUIRED)
-find_package(rclcpp_action REQUIRED)
-find_package(rclcpp_components REQUIRED)
 find_package(ament_cmake_auto REQUIRED)
+ament_auto_find_build_dependencies()
 
 
 message("-- Segway Robtics Notice: This external lib and include path can be changed by users.")
@@ -66,18 +54,6 @@ ament_auto_add_library(segway_chassis_component SHARED src/robot.cpp)
 target_compile_definitions(segway_chassis_component
   PRIVATE "COMPOSITION_BUILDING_DLL"
 )
-ament_target_dependencies(segway_chassis_component
-  rclcpp
-  rclcpp_components
-  std_msgs
-  nav_msgs
-  geometry_msgs
-  segway_msgs
-  sensor_msgs
-  diagnostic_msgs
-  tf2
-  tf2_ros
-)
 target_link_libraries(segway_chassis_component
   ${EXTERNAL_LIB}
 )
@@ -110,7 +86,5 @@ if(BUILD_TESTING)
   #set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
-
-ament_auto_find_build_dependencies()
 
 ament_auto_package()
