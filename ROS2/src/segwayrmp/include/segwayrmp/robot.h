@@ -69,13 +69,14 @@ namespace robot
 
             std::string robot_frame_name_;
             std::string odom_frame_name_;
+            bool publish_tf_;
 
             std::string bins_directory;
             std::string central_version;
             std::string motor_version;
 
             tf2::Quaternion odom_quat;
-            std::shared_ptr<tf2_ros::StaticTransformBroadcaster> odom_broadcaster;
+            std::shared_ptr<tf2_ros::TransformBroadcaster> odom_broadcaster;
 
             segway_msgs::msg::BmsFb bms_fb;
             segway_msgs::msg::ChassisCtrlSrcFb chassis_ctrl_src_fb;

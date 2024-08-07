@@ -161,6 +161,7 @@ Chassis::Chassis(const rclcpp::NodeOptions & options) : node(std::make_shared<rc
 {
     robot_frame_name_ = node->declare_parameter<std::string>("robot_frame_name", "base_link");
     odom_frame_name_ = node->declare_parameter<std::string>("odom_frame_name", "odom");
+    publish_tf_ = node->declare_parameter<bool>("publish_tf", true);
     auto comu_interface_param = node->declare_parameter<std::string>("comu_interface", "serial");
     auto serial_full_name = node->declare_parameter<std::string>("serial_full_name", "/dev/ttyUSB0");
 
@@ -257,7 +258,7 @@ Chassis::Chassis(const rclcpp::NodeOptions & options) : node(std::make_shared<rc
         std::bind(&Chassis::handle_iapCmdCancel, this, _1),
         std::bind(&Chassis::handle_iapCmdAccepted, this, _1));
  
-    odom_broadcaster = std::make_shared<tf2_ros::StaticTransformBroadcaster>(node);
+    odom_broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(node);
     timer_1000hz = node->create_wall_timer(std::chrono::milliseconds(1), std::bind(&Chassis::timer_1000hz_callback, this)); 
     timer_1hz = node->create_wall_timer(std::chrono::milliseconds(1000), std::bind(&Chassis::timer_1hz_callback, this));
 }
@@ -639,17 +640,19 @@ void Chassis::pub_odom_callback(void)
         OdomPoseXy_update = 0, OdomEulerXy_update = 0, OdomEulerZ_update = 0, OdomVelLineXy_update = 0;
 
         odom_quat.setRPY(0, 0, OdomEulerZ.euler_z / RAD_DEGREE_CONVER);
-        odom_trans.header.stamp = node->now();
-        odom_trans.header.frame_id = odom_frame_name_;
-        odom_trans.child_frame_id = robot_frame_name_;
-        odom_trans.transform.translation.x = OdomPoseXy.pos_x;
-        odom_trans.transform.translation.y = OdomPoseXy.pos_y;
-        odom_trans.transform.translation.z = 0.0;
-        odom_trans.transform.rotation.x = odom_quat.x();
-        odom_trans.transform.rotation.y = odom_quat.y();
-        odom_trans.transform.rotation.z = odom_quat.z();
-        odom_trans.transform.rotation.w = odom_quat.w();
-        odom_broadcaster->sendTransform(odom_trans);
+        if (publish_tf_) {
+            odom_trans.header.stamp = node->now();
+            odom_trans.header.frame_id = odom_frame_name_;
+            odom_trans.child_frame_id = robot_frame_name_;
+            odom_trans.transform.translation.x = OdomPoseXy.pos_x;
+            odom_trans.transform.translation.y = OdomPoseXy.pos_y;
+            odom_trans.transform.translation.z = 0.0;
+            odom_trans.transform.rotation.x = odom_quat.x();
+            odom_trans.transform.rotation.y = odom_quat.y();
+            odom_trans.transform.rotation.z = odom_quat.z();
+            odom_trans.transform.rotation.w = odom_quat.w();
+            odom_broadcaster->sendTransform(odom_trans);
+        }
 
         odom_fb.header.stamp = node->now();
         odom_fb.header.frame_id = odom_frame_name_;
