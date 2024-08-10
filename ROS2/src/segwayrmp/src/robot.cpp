@@ -41,13 +41,13 @@ uint8_t OdomEulerXy_update;
 uint8_t OdomEulerZ_update;
 uint8_t OdomVelLineXy_update;
 
-static std::map<uint32_t, std::string> hostErrors = {
+const std::map<uint32_t, std::string> hostErrors = {
     {0x00000000, "No error"},
     {0x00000001, "Loss of control board"},
     {0x00000002, "Unplug the serial port"}
 };
 
-static std::map<uint32_t, std::string> centralErrors = {
+const std::map<uint32_t, std::string> centralErrors = {
     {0x00000000, "No error"},
     {0x00000001, "Control car command communication interrupted"},
     {0x00000002, "Motor board communication interrupted"},
@@ -66,7 +66,7 @@ static std::map<uint32_t, std::string> centralErrors = {
     {0x00004000, "Battery communication interrupted"}
 };
 
-static std::map<uint32_t, std::string> motorErrors = {
+const std::map<uint32_t, std::string> motorErrors = {
     {0x00000000, "No error"},
     {0x00000001, "Phase current fault"},
     {0x00000002, "Phase voltage fault"},
@@ -86,7 +86,7 @@ static std::map<uint32_t, std::string> motorErrors = {
     {0x00008000, "Angle loop fault"}
 };
 
-static std::map<uint32_t, std::string> batteryErrors = {
+const std::map<uint32_t, std::string> batteryErrors = {
     {0x00000000, "No error"},
     {0x00000200, "Discharge over temperature protection"},
     {0x00000400, "Discharge low temperature protection"}
@@ -125,13 +125,13 @@ void EventPubData(int event_no)
     robot::Chassis::pub_event_callback(event_no);
 }
 
-std::string convert_to_hex_str(uint32_t value) {
+std::string convert_to_hex_str(const uint32_t& value) {
     std::stringstream ss;
     ss << "0x" << std::setw(8) << std::setfill('0') << std::hex << value;
     return ss.str();
 }
 
-std::string get_error_info(std::map<uint32_t, std::string> error_map, uint32_t key) {
+std::string get_error_info(const std::map<uint32_t, std::string>& error_map, const uint32_t& key) {
     auto it = error_map.find(key);
     return it != error_map.end() ? it->second : "UNDEFINED";
 }
