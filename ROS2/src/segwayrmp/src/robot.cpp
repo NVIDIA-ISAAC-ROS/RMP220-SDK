@@ -215,7 +215,7 @@ Chassis::Chassis(const rclcpp::NodeOptions & options) : node(std::make_shared<rc
     odom_pub = node->create_publisher<nav_msgs::msg::Odometry>("odom", 1);
     imu_pub = node->create_publisher<sensor_msgs::msg::Imu>("imu", 1);
     battery_pub = node->create_publisher<sensor_msgs::msg::BatteryState>("battery_state", 1);
-    diagnostics_pub = node->create_publisher<diagnostic_msgs::msg::DiagnosticArray>("diagnostics", 1);
+    diagnostics_pub = node->create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 1);
 
     event_client = node->create_client<segway_msgs::srv::ChassisSendEvent>("event_srv");
 
@@ -623,7 +623,7 @@ void Chassis::imu_pub_callback(void)
         ImuGyro_update = 0;
         ImuAcc_update = 0;
         imu_fb.header.stamp = node->now();
-        imu_fb.header.frame_id = "base_link";
+        imu_fb.header.frame_id = robot_frame_name_;
         imu_fb.angular_velocity.x = (double)ImuGyroData.gyr[0] / 900.0;
         imu_fb.angular_velocity.y = (double)ImuGyroData.gyr[1] / 900.0;
         imu_fb.angular_velocity.z = (double)ImuGyroData.gyr[2] / 900.0;
