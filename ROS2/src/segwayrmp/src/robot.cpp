@@ -41,13 +41,13 @@ uint8_t OdomEulerXy_update;
 uint8_t OdomEulerZ_update;
 uint8_t OdomVelLineXy_update;
 
-const std::map<uint32_t, std::string> hostErrors = {
+static const std::map<uint32_t, const std::string> hostErrors = {
     {0x00000000, "No error"},
     {0x00000001, "Loss of control board"},
     {0x00000002, "Unplug the serial port"}
 };
 
-const std::map<uint32_t, std::string> centralErrors = {
+static const std::map<uint32_t, const std::string> centralErrors = {
     {0x00000000, "No error"},
     {0x00000001, "Control car command communication interrupted"},
     {0x00000002, "Motor board communication interrupted"},
@@ -66,7 +66,7 @@ const std::map<uint32_t, std::string> centralErrors = {
     {0x00004000, "Battery communication interrupted"}
 };
 
-const std::map<uint32_t, std::string> motorErrors = {
+static const std::map<uint32_t, const std::string> motorErrors = {
     {0x00000000, "No error"},
     {0x00000001, "Phase current fault"},
     {0x00000002, "Phase voltage fault"},
@@ -86,7 +86,7 @@ const std::map<uint32_t, std::string> motorErrors = {
     {0x00008000, "Angle loop fault"}
 };
 
-const std::map<uint32_t, std::string> batteryErrors = {
+static const std::map<uint32_t, const std::string> batteryErrors = {
     {0x00000000, "No error"},
     {0x00000200, "Discharge over temperature protection"},
     {0x00000400, "Discharge low temperature protection"}
@@ -131,7 +131,7 @@ std::string convert_to_hex_str(const uint32_t& value) {
     return ss.str();
 }
 
-std::string get_error_info(const std::map<uint32_t, std::string>& error_map, const uint32_t& key) {
+std::string get_error_info(const std::map<uint32_t, const std::string>& error_map, const uint32_t& key) {
     auto it = error_map.find(key);
     return it != error_map.end() ? it->second : "UNDEFINED";
 }
