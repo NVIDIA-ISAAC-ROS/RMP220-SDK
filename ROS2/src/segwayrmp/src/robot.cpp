@@ -1,5 +1,7 @@
 #include "segwayrmp/robot.h"
 #include <cwchar>
+#include <sstream>
+#include <iomanip>
 #define VEL_DT              0.05  //50ms
 #define RAD_DEGREE_CONVER   57.2958
 #define HOST_SPEED_UINIT            3600 //
@@ -39,6 +41,57 @@ uint8_t OdomEulerXy_update;
 uint8_t OdomEulerZ_update;
 uint8_t OdomVelLineXy_update;
 
+static const std::map<uint32_t, const std::string> hostErrors = {
+    {0x00000000, "No error"},
+    {0x00000001, "Loss of control board"},
+    {0x00000002, "Unplug the serial port"}
+};
+
+static const std::map<uint32_t, const std::string> centralErrors = {
+    {0x00000000, "No error"},
+    {0x00000001, "Control car command communication interrupted"},
+    {0x00000002, "Motor board communication interrupted"},
+    {0x00000004, "IMU initialization failed"},
+    {0x00000008, "IMU failed to read data"},
+    {0x00000010, "Lost control"},
+    {0x00000020, "Locked rotor"},
+    {0x00000040, "Failed to calibrate IMU"},
+    {0x00000080, "Read Flash failed"},
+    {0x00000100, "IMU data update failed"},
+    {0x00000200, "Bms failed to initialize into test mode"},
+    {0x00000400, "Rollover"},
+    {0x00000800, "Any motor board restart is detected"},
+    {0x00001000, "Left magnetic encoder fault"},
+    {0x00002000, "Right magnetic encoder fault"},
+    {0x00004000, "Battery communication interrupted"}
+};
+
+static const std::map<uint32_t, const std::string> motorErrors = {
+    {0x00000000, "No error"},
+    {0x00000001, "Phase current fault"},
+    {0x00000002, "Phase voltage fault"},
+    {0x00000004, "Lack of phase"},
+    {0x00000008, "Under voltage"},
+    {0x00000010, "Over voltage"},
+    {0x00000020, "Over current"},
+    {0x00000040, "Over temperature"},
+    {0x00000080, "Locked rotor"},
+    {0x00000100, "Electrical angle fault"},
+    {0x00000200, "Excessive power fault"},
+    {0x00000400, "Over speed fault"},
+    {0x00000800, "Rotational speed sensor fault"},
+    {0x00001000, "Angle sensor fault"},
+    {0x00002000, "Current loop fault"},
+    {0x00004000, "Speed loop fault"},
+    {0x00008000, "Angle loop fault"}
+};
+
+static const std::map<uint32_t, const std::string> batteryErrors = {
+    {0x00000000, "No error"},
+    {0x00000200, "Discharge over temperature protection"},
+    {0x00000400, "Discharge low temperature protection"}
+};
+
 static SegwayData segway_data_tbl[] = {
     {Chassis_Data_Speed,  sizeof(SpeedData), &Speed_TimeStamp, &Speed_update, &SpeedData},
     {Chassis_Data_Ticks,  sizeof(TickData), &Tick_TimeStamp, &Tick_update, &TickData},
@@ -72,8 +125,26 @@ void EventPubData(int event_no)
     robot::Chassis::pub_event_callback(event_no);
 }
 
+std::string convert_to_hex_str(const uint32_t& value) {
+    std::stringstream ss;
+    ss << "0x" << std::setw(8) << std::setfill('0') << std::hex << value;
+    return ss.str();
+}
+
+std::string get_error_info(const std::map<uint32_t, const std::string>& error_map, const uint32_t& key) {
+    auto it = error_map.find(key);
+    return it != error_map.end() ? it->second : "UNDEFINED";
+}
+
 namespace robot
 {
+
+rclcpp::node_interfaces::NodeBaseInterface::SharedPtr
+Chassis::get_node_base_interface() const
+{
+  return this->node->get_node_base_interface();
+}
+
 void Chassis::pub_event_callback(int event_no)
 {
     using eventServiceResponseFutrue = rclcpp::Client<segway_msgs::srv::ChassisSendEvent>::SharedFuture;
@@ -86,10 +157,43 @@ void Chassis::pub_event_callback(int event_no)
     auto event_future_result = event_client->async_send_request(event_request, event_response_receive_callback);
 }
 
-Chassis::Chassis(rclcpp::Node::SharedPtr nh) : node(nh)
+Chassis::Chassis(const rclcpp::NodeOptions & options) : node(std::make_shared<rclcpp::Node>("SmartCar", options))
 {
+    robot_frame_name_ = node->declare_parameter<std::string>("robot_frame_name", "base_link");
+    odom_frame_name_ = node->declare_parameter<std::string>("odom_frame_name", "odom");
+    publish_tf_ = node->declare_parameter<bool>("publish_tf", true);
+    auto comu_interface_param = node->declare_parameter<std::string>("comu_interface", "serial");
+    auto serial_full_name = node->declare_parameter<std::string>("serial_full_name", "/dev/ttyUSB0");
+
+    comu_choice_e comu_interface;
+    if (comu_interface_param == "serial") {
+        comu_interface = comu_serial;
+        set_smart_car_serial((char*)serial_full_name.c_str());
+    } else if (comu_interface_param == "can") {
+        comu_interface = comu_can;
+    } else {
+        throw std::runtime_error("Invalid comu interface \"" + comu_interface_param + "\". Exiting.");
+    }
+
+    // Establish communication interface
+    set_comu_interface(comu_interface);//Before calling init_control_ctrl, need to call this function set whether the communication port is serial or CAN.
+    if (init_control_ctrl() == -1) { 
+        exit_control_ctrl();
+        throw std::runtime_error("init_control failed!");
+    } else {
+        RCLCPP_INFO(this->node->get_logger(), "init_control success!");
+    }
+
+    // Callback on node shutdown to disable control and exit
+    using rclcpp::contexts::get_global_default_context;
+    get_global_default_context()->add_pre_shutdown_callback(
+        [this]() {
+        set_enable_ctrl(0);
+        exit_control_ctrl();
+    });
+
     using namespace std::placeholders;
-    car_node = nh;
+    car_node = this->node;
 
     timestamp_data.on_new_data = PubData;
     aprctrl_datastamped_jni_register(&timestamp_data);
@@ -100,16 +204,18 @@ Chassis::Chassis(rclcpp::Node::SharedPtr nh) : node(nh)
     node->declare_parameter<std::string>("central_version", "1.01");
     node->declare_parameter<std::string>("motor_version", "1.01");
 
-    bms_fb_pub = node->create_publisher<segway_msgs::msg::BmsFb>("/bms_fb", 1);
-    chassis_ctrl_src_fb_pub = node->create_publisher<segway_msgs::msg::ChassisCtrlSrcFb>("/chassis_ctrl_src_fb", 1);
-    chassis_mileage_meter_fb_pub = node->create_publisher<segway_msgs::msg::ChassisMileageMeterFb>("/chassis_mileage_meter_fb", 1);
-    chassis_mode_fb_pub = node->create_publisher<segway_msgs::msg::ChassisModeFb>("/chassis_mode_fb", 1);
-    error_code_fb_pub = node->create_publisher<segway_msgs::msg::ErrorCodeFb>("/error_code_fb", 1);
-    motor_work_mode_fb_pub = node->create_publisher<segway_msgs::msg::MotorWorkModeFb>("/motor_work_mode_fb", 1);
-    speed_fb_pub = node->create_publisher<segway_msgs::msg::SpeedFb>("/speed_fb", 1);
-    ticks_fb_pub = node->create_publisher<segway_msgs::msg::TicksFb>("/ticks_fb", 1);
-    odom_pub = node->create_publisher<nav_msgs::msg::Odometry>("/odom", 1);
-    imu_pub = node->create_publisher<sensor_msgs::msg::Imu>("/imu", 1);
+    bms_fb_pub = node->create_publisher<segway_msgs::msg::BmsFb>("bms_fb", 1);
+    chassis_ctrl_src_fb_pub = node->create_publisher<segway_msgs::msg::ChassisCtrlSrcFb>("chassis_ctrl_src_fb", 1);
+    chassis_mileage_meter_fb_pub = node->create_publisher<segway_msgs::msg::ChassisMileageMeterFb>("chassis_mileage_meter_fb", 1);
+    chassis_mode_fb_pub = node->create_publisher<segway_msgs::msg::ChassisModeFb>("chassis_mode_fb", 1);
+    error_code_fb_pub = node->create_publisher<segway_msgs::msg::ErrorCodeFb>("error_code_fb", 1);
+    motor_work_mode_fb_pub = node->create_publisher<segway_msgs::msg::MotorWorkModeFb>("motor_work_mode_fb", 1);
+    speed_fb_pub = node->create_publisher<segway_msgs::msg::SpeedFb>("speed_fb", 1);
+    ticks_fb_pub = node->create_publisher<segway_msgs::msg::TicksFb>("ticks_fb", 1);
+    odom_pub = node->create_publisher<nav_msgs::msg::Odometry>("odom", 1);
+    imu_pub = node->create_publisher<sensor_msgs::msg::Imu>("imu", 1);
+    battery_pub = node->create_publisher<sensor_msgs::msg::BatteryState>("battery_state", 1);
+    diagnostics_pub = node->create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 1);
 
     event_client = node->create_client<segway_msgs::srv::ChassisSendEvent>("event_srv");
 
@@ -152,7 +258,7 @@ Chassis::Chassis(rclcpp::Node::SharedPtr nh) : node(nh)
         std::bind(&Chassis::handle_iapCmdCancel, this, _1),
         std::bind(&Chassis::handle_iapCmdAccepted, this, _1));
  
-    odom_broadcaster = std::make_shared<tf2_ros::StaticTransformBroadcaster>(node);
+    odom_broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(node);
     timer_1000hz = node->create_wall_timer(std::chrono::milliseconds(1), std::bind(&Chassis::timer_1000hz_callback, this)); 
     timer_1hz = node->create_wall_timer(std::chrono::milliseconds(1000), std::bind(&Chassis::timer_1hz_callback, this));
 }
@@ -233,8 +339,8 @@ void Chassis::ros_set_chassis_enable_cmd_callback(const std::shared_ptr<segway_m
     else {
         ret = set_enable_ctrl(1);
     }
-    RCLCPP_INFO(rclcpp::get_logger("SmartCar"), "ros_set_chassis_enable_cmd cmd[%d]", request->ros_set_chassis_enable_cmd);
-    RCLCPP_INFO(rclcpp::get_logger("SmartCar"), "chassis_set_chassis_enable_result[%d]", ret);
+    RCLCPP_DEBUG(this->node->get_logger(), "ros_set_chassis_enable_cmd cmd[%d]", request->ros_set_chassis_enable_cmd);
+    RCLCPP_DEBUG(this->node->get_logger(), "chassis_set_chassis_enable_result[%d]", ret);
     response->chassis_set_chassis_enable_result = ret;
 }
 void Chassis::ros_set_chassis_calib_imu_cmd_callback(const std::shared_ptr<segway_msgs::srv::RosSetChassisCalibImuCmd::Request> request,
@@ -425,6 +531,54 @@ void Chassis::timer_1hz_callback(void)
 
     motor_work_mode_fb.motor_work_mode = get_chassis_work_model();
     motor_work_mode_fb_pub->publish(motor_work_mode_fb);
+
+    battery_msg_.header.stamp = node->now();
+    battery_msg_.header.frame_id = robot_frame_name_;
+    battery_msg_.voltage = get_bat_mvol() / 1000.0;
+    battery_msg_.current = get_bat_mcurrent() / 1000.0;
+    battery_msg_.percentage = get_bat_soc() / 100.0;
+    if (get_charge_mode_status()) {
+        battery_msg_.power_supply_status = sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_CHARGING;
+    } else {
+        battery_msg_.power_supply_status = sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_DISCHARGING;
+    }
+    battery_pub->publish(battery_msg_);
+
+    auto diagnostics_msg = diagnostic_msgs::msg::DiagnosticArray();
+    diagnostics_msg.header.stamp = node->now();
+    diagnostics_msg.header.frame_id = robot_frame_name_;
+    auto diagnostic_status = diagnostic_msgs::msg::DiagnosticStatus();
+    // add errors as key value pairs
+    auto host_error_kv = diagnostic_msgs::msg::KeyValue();
+    host_error_kv.key = "host_error";
+    host_error_kv.value = convert_to_hex_str(error_code_fb.host_error) + ": " + get_error_info(hostErrors, error_code_fb.host_error);
+    diagnostic_status.values.push_back(host_error_kv);
+    auto central_error_kv = diagnostic_msgs::msg::KeyValue();
+    central_error_kv.key = "central_error";
+    central_error_kv.value = convert_to_hex_str(error_code_fb.central_error) + ": " + get_error_info(centralErrors, error_code_fb.central_error);
+    diagnostic_status.values.push_back(central_error_kv);
+    auto left_motor_error_kv = diagnostic_msgs::msg::KeyValue();
+    left_motor_error_kv.key = "left_motor_error";
+    left_motor_error_kv.value = convert_to_hex_str(error_code_fb.left_motor_error) + ": " + get_error_info(motorErrors, error_code_fb.left_motor_error);
+    diagnostic_status.values.push_back(left_motor_error_kv);
+    auto right_motor_error_kv = diagnostic_msgs::msg::KeyValue();
+    right_motor_error_kv.key = "right_motor_error";
+    right_motor_error_kv.value = convert_to_hex_str(error_code_fb.right_motor_error) + ": " + get_error_info(motorErrors, error_code_fb.right_motor_error);
+    diagnostic_status.values.push_back(right_motor_error_kv);
+    auto bms_error_kv = diagnostic_msgs::msg::KeyValue();
+    bms_error_kv.key = "bms_error";
+    bms_error_kv.value = convert_to_hex_str(error_code_fb.bms_error) + ": " + get_error_info(batteryErrors, error_code_fb.bms_error);
+    // finish constructing status
+    diagnostic_status.values.push_back(bms_error_kv);
+    if (error_code_fb.host_error || error_code_fb.central_error || error_code_fb.left_motor_error
+        || error_code_fb.right_motor_error || error_code_fb.bms_error) {
+        diagnostic_status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+    } else {
+        diagnostic_status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+    }
+    diagnostic_status.name = "segway_rmp";
+    diagnostics_msg.status.push_back(diagnostic_status);
+    diagnostics_pub->publish(diagnostics_msg);
 }
 
 void Chassis::timer_1000hz_callback(void)
@@ -469,7 +623,7 @@ void Chassis::imu_pub_callback(void)
         ImuGyro_update = 0;
         ImuAcc_update = 0;
         imu_fb.header.stamp = node->now();
-        imu_fb.header.frame_id = "base_link";
+        imu_fb.header.frame_id = robot_frame_name_;
         imu_fb.angular_velocity.x = (double)ImuGyroData.gyr[0] / 900.0;
         imu_fb.angular_velocity.y = (double)ImuGyroData.gyr[1] / 900.0;
         imu_fb.angular_velocity.z = (double)ImuGyroData.gyr[2] / 900.0;
@@ -486,20 +640,22 @@ void Chassis::pub_odom_callback(void)
         OdomPoseXy_update = 0, OdomEulerXy_update = 0, OdomEulerZ_update = 0, OdomVelLineXy_update = 0;
 
         odom_quat.setRPY(0, 0, OdomEulerZ.euler_z / RAD_DEGREE_CONVER);
-        odom_trans.header.stamp = node->now();
-        odom_trans.header.frame_id = "odom";
-        odom_trans.child_frame_id = "base_link";
-        odom_trans.transform.translation.x = OdomPoseXy.pos_x;
-        odom_trans.transform.translation.y = OdomPoseXy.pos_y;
-        odom_trans.transform.translation.z = 0.0;
-        odom_trans.transform.rotation.x = odom_quat.x();
-        odom_trans.transform.rotation.y = odom_quat.y();
-        odom_trans.transform.rotation.z = odom_quat.z();
-        odom_trans.transform.rotation.w = odom_quat.w();
-        odom_broadcaster->sendTransform(odom_trans);
+        if (publish_tf_) {
+            odom_trans.header.stamp = node->now();
+            odom_trans.header.frame_id = odom_frame_name_;
+            odom_trans.child_frame_id = robot_frame_name_;
+            odom_trans.transform.translation.x = OdomPoseXy.pos_x;
+            odom_trans.transform.translation.y = OdomPoseXy.pos_y;
+            odom_trans.transform.translation.z = 0.0;
+            odom_trans.transform.rotation.x = odom_quat.x();
+            odom_trans.transform.rotation.y = odom_quat.y();
+            odom_trans.transform.rotation.z = odom_quat.z();
+            odom_trans.transform.rotation.w = odom_quat.w();
+            odom_broadcaster->sendTransform(odom_trans);
+        }
 
         odom_fb.header.stamp = node->now();
-        odom_fb.header.frame_id = "odom";
+        odom_fb.header.frame_id = odom_frame_name_;
         odom_fb.pose.pose.position.x = OdomPoseXy.pos_x;
         odom_fb.pose.pose.position.y = OdomPoseXy.pos_y;
         odom_fb.pose.pose.position.z = 0.0;
@@ -508,7 +664,7 @@ void Chassis::pub_odom_callback(void)
         odom_fb.pose.pose.orientation.z = odom_quat.z();
         odom_fb.pose.pose.orientation.w = odom_quat.w();
 
-        odom_fb.child_frame_id = "base_link";
+        odom_fb.child_frame_id = robot_frame_name_;
         odom_fb.twist.twist.linear.x = (double)SpeedData.car_speed / LINE_SPEED_TRANS_GAIN_MPS;
         odom_fb.twist.twist.linear.y = 0;
         odom_fb.twist.twist.angular.z = (double)SpeedData.turn_speed / ANGULAR_SPEED_TRANS_GAIN_RADPS;;
@@ -517,3 +673,6 @@ void Chassis::pub_odom_callback(void)
 }
 
 }
+
+#include <rclcpp_components/register_node_macro.hpp>
+RCLCPP_COMPONENTS_REGISTER_NODE(robot::Chassis)
